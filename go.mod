@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/dutchcoders/go-clamd v0.0.0-20170520113014-b970184f4d9e
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/stretchr/testify v1.9.0
 	gopkg.in/gcfg.v1 v1.2.3
 )
