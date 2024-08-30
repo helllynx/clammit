@@ -23,6 +23,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/golang-jwt/jwt/v5"
 	"gopkg.in/gcfg.v1"
 )
 
@@ -120,6 +121,8 @@ var ctx *Ctx
 var configFile string
 var EICAR = []byte(`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`)
 
+var secretKey = []byte("secret-key")
+
 func init() {
 	flag.StringVar(&configFile, "config", "", "Configuration file")
 }
@@ -144,7 +147,7 @@ func main() {
 	runtime.GOMAXPROCS(ctx.Config.App.NumThreads)
 
 	startLogging()
-
+	secretKey = []byte(getEnv("CLAMMIT_JWT_SECRET_KEY", "secret-key"))
 	/*
 	 * Construct objects, validate the URLs
 	 */
@@ -164,9 +167,15 @@ func main() {
 	 * Set up the HTTP server
 	 */
 	router := http.NewServeMux()
-
 	router.HandleFunc("/clammit", infoHandler)
-	router.HandleFunc("/clammit/scan", scanHandler)
+	if bytes.Equal(secretKey, []byte("secret-key")) {
+		authenticatedScanHandler := checkAuthentication(http.HandlerFunc(scanHandler))
+		router.HandleFunc("/clammit/scan", func(w http.ResponseWriter, r *http.Request) {
+			authenticatedScanHandler.ServeHTTP(w, r)
+		})
+	} else {
+		router.HandleFunc("/clammit/scan", scanHandler)
+	}
 	router.HandleFunc("/clammit/readyz", readyzHandler)
 
 	if ctx.Config.App.TestPages {
@@ -183,6 +192,23 @@ func main() {
 		ctx.Logger.Println("Listening on", ctx.Config.App.Listen)
 		http.Serve(listener, router)
 	}
+}
+
+func checkAuthentication(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookieName := "jwt"
+		token, err := getTokenFromCookie(w, r, cookieName)
+		if err != nil {
+			log.Fatalf("Not authenticated")
+			return
+		}
+		err2 := verifyToken(token)
+		if err2 != nil {
+			log.Fatalf("Token not valid")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 /*
@@ -229,6 +255,35 @@ func getBoolEnv(key string, fallback bool) bool {
 		}
 	}
 	return fallback
+}
+
+func getTokenFromCookie(w http.ResponseWriter, r *http.Request, cookieName string) (string, error) {
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		if err == http.ErrNoCookie {
+			w.WriteHeader(http.StatusUnauthorized)
+			return "", err
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		return "", err
+	}
+
+	return cookie.Value, nil
+}
+
+func verifyToken(tokenString string) error {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return secretKey, nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if !token.Valid {
+		return fmt.Errorf("invalid token")
+	}
+	return nil
 }
 
 /*
