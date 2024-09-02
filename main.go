@@ -169,12 +169,12 @@ func main() {
 	router := http.NewServeMux()
 	router.HandleFunc("/clammit", infoHandler)
 	if bytes.Equal(secretKey, []byte("secret-key")) {
+		router.HandleFunc("/clammit/scan", scanHandler)
+	} else {
 		authenticatedScanHandler := checkAuthentication(http.HandlerFunc(scanHandler))
 		router.HandleFunc("/clammit/scan", func(w http.ResponseWriter, r *http.Request) {
 			authenticatedScanHandler.ServeHTTP(w, r)
 		})
-	} else {
-		router.HandleFunc("/clammit/scan", scanHandler)
 	}
 	router.HandleFunc("/clammit/readyz", readyzHandler)
 
