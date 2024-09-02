@@ -168,14 +168,7 @@ func main() {
 	 */
 	router := http.NewServeMux()
 	router.HandleFunc("/clammit", infoHandler)
-	if bytes.Equal(secretKey, []byte("secret-key")) {
-		router.HandleFunc("/clammit/scan", scanHandler)
-	} else {
-		authenticatedScanHandler := checkAuthentication(http.HandlerFunc(scanHandler))
-		router.HandleFunc("/clammit/scan", func(w http.ResponseWriter, r *http.Request) {
-			authenticatedScanHandler.ServeHTTP(w, r)
-		})
-	}
+	router.HandleFunc("/clammit/scan", scanHandler)
 	router.HandleFunc("/clammit/readyz", readyzHandler)
 
 	if ctx.Config.App.TestPages {
@@ -192,23 +185,6 @@ func main() {
 		ctx.Logger.Println("Listening on", ctx.Config.App.Listen)
 		http.Serve(listener, router)
 	}
-}
-
-func checkAuthentication(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookieName := "jwt"
-		token, err := getTokenFromCookie(w, r, cookieName)
-		if err != nil {
-			log.Fatalf("Not authenticated")
-			return
-		}
-		err2 := verifyToken(token)
-		if err2 != nil {
-			log.Fatalf("Token not valid")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 /*
@@ -429,6 +405,22 @@ func scanHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	ctx.ActivityChan <- 1
 	defer func() { ctx.ActivityChan <- -1 }()
+	// Authentication logic
+	if string(secretKey) != "secret-key" {
+		cookieName := "jwt"
+		token, err := getTokenFromCookie(w, req, cookieName)
+		if err != nil {
+			log.Fatalf("Not authenticated")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		err2 := verifyToken(token)
+		if err2 != nil {
+			log.Fatalf("Token not valid")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
 
 	if !ctx.ScanInterceptor.Handle(w, req, req.Body) {
 		w.Write([]byte("No virus found"))
