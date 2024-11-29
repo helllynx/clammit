@@ -175,7 +175,7 @@ func main() {
 		fs := http.FileServer(http.Dir("testfiles"))
 		router.Handle("/clammit/test/", http.StripPrefix("/clammit/test/", fs))
 	}
-	router.HandleFunc("/", scanForwardHandler)
+	//router.HandleFunc("/", scanForwardHandler)
 
 	if listener, err := getListener(ctx.Config.App.Listen, socketPerms); err != nil {
 		ctx.Logger.Fatal("Unable to listen on: ", ctx.Config.App.Listen, ", reason: ", err)
